@@ -90,6 +90,9 @@ make -j"$NCPUS" \
     dxgi.h d3d10.h d3d10_1.h d3d10shader.h d3d10effect.h d3d10sdklayers.h \
     d3d11.h d3d11sdklayers.h d3d12.h d3d12sdklayers.h \
     dwrite.h dwrite_1.h dwrite_2.h dwrite_3.h \
+    objidlbase.h propidl.h d2d1.h \
+    exdisp.h docobj.h shldisp.h shtypes.h shobjidl.h shobjidl_core.h comcat.h \
+    propsys.h structuredquerycondition.h objectarray.h \
     > include-headers.log 2>&1 \
     || { echo "widl header generation FAILED"; tail -40 include-headers.log; exit 1; }
 echo "    headers: $(ls dxgi.h d3d11.h dwrite.h oaidl.h 2>/dev/null | tr '\n' ' ')"
