@@ -47,6 +47,25 @@ if start in s and end in s and "#ifdef FEX_IOS_HOST\n" + start not in s:
     print("==> [3-] guarded ARM64EC probe reporters in", p)
 PY
 
+# Upstream Arm64.cpp's [caspal128] probe calls VirtualQuery (a Win32 API)
+# unguarded; the iOS-native build has no windows.h. Keep the region lookup on
+# Windows, log the address fields elsewhere.
+python3 - <<'PY'
+p = "FEX/FEXCore/Source/Utils/ArchHelpers/Arm64.cpp"
+s = open(p).read()
+start = "  MEMORY_BASIC_INFORMATION mbi {};\n"
+tail = "                    mbi.Protect, type, mbi.State);\n"
+alt = ('#else\n'
+       '  LogMan::Msg::EFmt("[caspal128] MISALIGNED-UNSUPPORTED Size={} addrReg=x{} addr={:#x} misalign={}",\n'
+       '                    Size, AddressReg, GPRs[AddressReg], GPRs[AddressReg] & 15);\n'
+       '#endif\n')
+if start in s and tail in s and "#ifdef _WIN32\n" + start not in s:
+    i = s.index(start); j = s.index(tail, i) + len(tail)
+    s = s[:i] + "#ifdef _WIN32\n" + s[i:j] + alt + s[j:]
+    open(p, "w").write(s)
+    print("==> [3-] guarded Win32 VirtualQuery probe in", p)
+PY
+
 echo "==> verifying FEX archives"
 REQUIRED=(
     FEXCore/Source/libFEXCore.a
