@@ -41,6 +41,23 @@ if old in s:
     print("==> [5-] dropped ri_page_wait_time_mach from", p)
 PY
 
+# build/dxmt-ios guards the optional madeira-d3d12 block with
+#   if [[ -f deps.sh ]] && source deps.sh 2>/dev/null; then
+# but deps.sh calls `exit 1` when Apple's converter package is absent, and an
+# exit inside a sourced file ends the whole build script (silently: stderr is
+# discarded). Only source it when the package is actually there.
+python3 - <<'PY'
+p = "build/dxmt-ios/build.sh"
+s = open(p).read()
+old = 'if [[ -f "$BUILD_DIR/../madeira-d3d12/deps.sh" ]] && \\\n'
+new = ('if [[ -f "$BUILD_DIR/../madeira-d3d12/deps.sh" ]] && \\\n'
+       '   [[ -f "$REPO_ROOT/research/GPTK/Metal Shader Converter 4.0 beta 2.pkg" ]] && \\\n')
+if old in s and new not in s:
+    s = s.replace(old, new, 1)
+    open(p, "w").write(s)
+    print("==> [5-] made the madeira-d3d12 block optional for real in", p)
+PY
+
 echo "==> [5a] ntdll-unix"
 run_build build/ntdll-unix
 file app/Madeira/libntdll_unix.a || true
