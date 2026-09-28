@@ -31,6 +31,22 @@ if "IOS_RPM_GUARD" in s and fallback not in s and marker in s:
     print("==> [3-] added IOS_RPM_GUARD fallback in", p)
 PY
 
+# Upstream Core.cpp reports ARM64EC-only probe buffers (IosFfsBypassLog lives
+# in Source/Windows/ARM64EC/Module.cpp, IosCbEntryLog's extern is under
+# FEX_IOS_HOST) without the FEX_IOS_HOST guard their declarations have. The
+# iOS-native libs are built without FEX_IOS_HOST, so guard the two blocks.
+python3 - <<'PY'
+p = "FEX/FEXCore/Source/Interface/Core/Core.cpp"
+s = open(p).read()
+start = "  {\n    static uint64_t FfsLastCount = 0;"
+end = "\n\n  /* iOS-Madeira: refuse to compile obviously-invalid guest RIPs."
+if start in s and end in s and "#ifdef FEX_IOS_HOST\n" + start not in s:
+    i = s.index(start); j = s.index(end, i)
+    s = s[:i] + "#ifdef FEX_IOS_HOST\n" + s[i:j] + "\n#endif" + s[j:]
+    open(p, "w").write(s)
+    print("==> [3-] guarded ARM64EC probe reporters in", p)
+PY
+
 echo "==> verifying FEX archives"
 REQUIRED=(
     FEXCore/Source/libFEXCore.a
@@ -61,7 +77,7 @@ if [ ! -f FEX/build-ios/"${REQUIRED[0]}" ]; then
         > FEX/cmake-ios.log 2>&1 \
         || { echo "FEX cmake FAILED"; tail -60 FEX/cmake-ios.log; exit 1; }
     echo "==> [3b] build FEX (static archives only, skipping FEXCore_shared dylib)"
-    ninja -C FEX/build-ios -j "$NCPUS" "${REQUIRED[@]}" \
+    ninja -C FEX/build-ios -k 0 -j "$NCPUS" "${REQUIRED[@]}" \
         > FEX/build-ios.log 2>&1 \
         || { echo "FEX build FAILED"; tail -80 FEX/build-ios.log; exit 1; }
 fi
