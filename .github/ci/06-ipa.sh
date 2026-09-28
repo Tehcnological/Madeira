@@ -83,6 +83,14 @@ for d in $REQUIRED_DLLS; do
 done
 [ -z "$missing" ] || { echo "missing vcruntime DLLs:$missing"; exit 1; }
 echo "    all 12 MSVC runtime DLLs present (unsigned .ipa -> resigning needed on device)"
+# The extraction also leaves MSI database tables and MFC DLLs behind (~35 MB).
+# Ship exactly the twelve files tools/fetch-vcruntime.md lists.
+for f in "$VCRT"/* "$VCRT"/.[!.]*; do
+    [ -e "$f" ] || continue
+    b=$(basename "$f")
+    case " $(echo $REQUIRED_DLLS) " in *" $b "*) ;; *) rm -rf "$f";; esac
+done
+echo "    pruned vcruntime dir to $(ls "$VCRT" | wc -l | tr -d ' ') files"
 
 echo "==> [6b] verify linked libraries are in place"
 REQUIRED_LIBS=(
