@@ -10,6 +10,43 @@ cd "$REPO"
 
 ensure_submodule wine
 
+# Upstream loader.c (wine pin 723d1bf5) #includes arm64ec_x64_export_iat.c,
+# which the Madeira author left untracked ("unbuilt review candidate").
+# makedep scans every #include, so configure dies creating the Makefile
+# without it. CI never compiles the ARM64EC ntdll (the shipped ntdll.dll in
+# app/Madeira/arm64ec-windows is prebuilt), so a stub that keeps the
+# pre-patch behaviour (never classify a slot as an x64 export) is enough.
+IAT_STUB=wine/dlls/ntdll/arm64ec_x64_export_iat.c
+if [ ! -f "$IAT_STUB" ]; then
+    echo "==> [2-] stubbing missing $IAT_STUB (untracked upstream)"
+    cat > "$IAT_STUB" <<'STUB'
+/* CI stub: upstream file is untracked. Returns FALSE, i.e. the loader keeps
+ * its behaviour from before the x64-export IAT classifier was added. */
+static BOOL arm64ec_iat_slot_is_x64_export( HMODULE module, ULONG_PTR image_size,
+                                            ULONG_PTR slot_rva, ULONG_PTR exports_rva,
+                                            ULONG_PTR exports_size, ULONG_PTR code_map,
+                                            ULONG_PTR code_map_count )
+{
+    return FALSE;
+}
+STUB
+fi
+
+# Upstream sync.c includes build/madeira_cfg.h ahead of config.h; makedep
+# rejects that ("config.h must be included before other headers"). The iOS
+# compile force-includes config.h (-include) so it is first there anyway;
+# swapping the two lines in the file changes nothing that gets built.
+python3 - <<'PY'
+p = "wine/dlls/ntdll/unix/sync.c"
+lines = open(p).read().split("\n")
+cfg = next((i for i, l in enumerate(lines) if "madeira_cfg.h" in l), None)
+conf = next((i for i, l in enumerate(lines) if l.strip() == '#include "config.h"'), None)
+if cfg is not None and conf is not None and cfg < conf:
+    lines.insert(cfg, lines.pop(conf))
+    open(p, "w").write("\n".join(lines))
+    print("==> [2-] moved config.h ahead of madeira_cfg.h in", p)
+PY
+
 if [ ! -f wine/build-macos/include/config.h ]; then
     echo "==> [2a] configure wine/build-macos"
     mkdir -p wine/build-macos
