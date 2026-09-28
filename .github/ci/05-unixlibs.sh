@@ -24,21 +24,35 @@ run_build() {
         echo "--- compile errors in $f"
         grep "error:" "$f" | head -n 8
     done
-    [ "$rc" -eq 0 ] || exit "$rc"
+    if [ "$rc" -ne 0 ]; then echo "!! $dir failed (rc=$rc), continuing to surface other errors"; STAGE_FAIL=1; fi
 }
+STAGE_FAIL=0
+
+# server_ios.c's [xp] perf line reads rusage_info_v6.ri_page_wait_time_mach,
+# which the SDKs on GitHub's runners (Xcode 26) do not declare. It only feeds
+# the "pgw=" log figure, so report 0 there when the SDK lacks the field.
+python3 - <<'PY'
+p = "build/ntdll-unix/server_ios.c"
+s = open(p).read()
+old = "XP_MS( ru.ri_page_wait_time_mach - pru.ri_page_wait_time_mach )"
+if old in s:
+    s = s.replace(old, "XP_MS( 0 ) /* CI: ri_page_wait_time_mach not in this SDK */")
+    open(p, "w").write(s)
+    print("==> [5-] dropped ri_page_wait_time_mach from", p)
+PY
 
 echo "==> [5a] ntdll-unix"
 run_build build/ntdll-unix
-file app/Madeira/libntdll_unix.a
+file app/Madeira/libntdll_unix.a || true
 
 echo "==> [5b] win32u-unix"
 run_build build/win32u-unix
-file app/Madeira/libwin32u_unix.a
+file app/Madeira/libwin32u_unix.a || true
 
 echo "==> [5c] wineserver (build base archive from wine/server, then patch)"
-bash "$GITHUB_ACTION_PATH/build-wineserver-base.sh"
+bash "$GITHUB_ACTION_PATH/build-wineserver-base.sh" || { echo "!! wineserver base failed"; STAGE_FAIL=1; }
 run_build build/wineserver all
-file app/Madeira/libwineserver.a
+file app/Madeira/libwineserver.a || true
 
 echo "==> [5d] dxmt-ios unix side + LLVM combine"
 run_build build/dxmt-ios
@@ -52,6 +66,7 @@ if [ ! -f build/dxmt-ios/obj/madeira_ir_unix.o ]; then
         -c "$GITHUB_ACTION_PATH/stubs/madeira_d3d12_stub.c" \
         -o build/dxmt-ios/obj/madeira_d3d12_stub.o
 fi
+[ "$STAGE_FAIL" -eq 0 ] || { echo "one or more sub-builds failed (see above)"; exit 1; }
 cd build/dxmt-ios
 rm -f libdxmt_combined.a
 xcrun -sdk iphoneos libtool -static -o libdxmt_combined.a \
