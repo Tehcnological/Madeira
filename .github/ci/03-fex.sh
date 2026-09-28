@@ -14,6 +14,23 @@ if [ ! -d FEX/External/range-v3/.git ]; then
         > FEX/submodules.log 2>&1 || { tail -30 FEX/submodules.log; exit 1; }
 fi
 
+# Upstream FEX 89db11f added IOS_RPM_GUARD() to malloc_usable_size in the
+# system-allocator branch of AllocatorHooks.cpp, but only defines the macro
+# in the ENABLE_FEX_ALLOCATOR branch. iOS builds with the FEX allocator OFF
+# (see build/fex-ios/build.sh), and upstream only rebuilds FEXCore targets,
+# so its stale libJemallocLibs.a hides this. No rpmalloc there -> no-op.
+python3 - <<'PY'
+p = "FEX/FEXCore/Source/Utils/AllocatorHooks.cpp"
+s = open(p).read()
+marker = "size_t malloc_usable_size(void* ptr) {"
+fallback = "#ifndef IOS_RPM_GUARD\n#define IOS_RPM_GUARD() ((void)0)\n#endif\n"
+if "IOS_RPM_GUARD" in s and fallback not in s and marker in s:
+    i = s.rfind(marker)  # the system-allocator branch is the last definition
+    s = s[:i] + fallback + s[i:]
+    open(p, "w").write(s)
+    print("==> [3-] added IOS_RPM_GUARD fallback in", p)
+PY
+
 echo "==> verifying FEX archives"
 REQUIRED=(
     FEXCore/Source/libFEXCore.a
