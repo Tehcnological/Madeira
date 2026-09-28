@@ -12,12 +12,20 @@ status=${PIPESTATUS[0]}
 
 if [ "$status" -ne 0 ]; then
     # Encode per the workflow-command spec so the whole tail is one annotation.
-    msg=$(tail -n 60 "$LOG" | cut -c1-400 | python3 -c '
+    # Error lines first (annotations are cut near 4 KB), then a short tail.
+    {
+        echo "== error lines =="
+        grep -n -i -E "error[: ]|FAILED|fatal|undefined symbol|not found|No such file" "$LOG" \
+            | grep -v -E "^[0-9]+:\[[0-9]+/[0-9]+\] Building" | tail -n 25
+        echo "== tail =="
+        tail -n 12 "$LOG"
+    } | cut -c1-240 > "$LOG.summary"
+    msg=$(python3 -c '
 import sys
-s = sys.stdin.read()
+s = open(sys.argv[1]).read()[-3800:]
 s = s.replace("%", "%25").replace("\r", "%0D").replace("\n", "%0A")
 sys.stdout.write(s)
-')
+' "$LOG.summary")
     echo "::error title=${STAGE} failed (exit ${status})::${msg}"
 fi
 exit "$status"
