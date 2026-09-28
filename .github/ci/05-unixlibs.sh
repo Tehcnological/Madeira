@@ -72,6 +72,33 @@ run_build build/wineserver all
 file app/Madeira/libwineserver.a || true
 
 echo "==> [5d] dxmt-ios unix side + LLVM combine"
+# DXMT's DirectX headers are a nested submodule (include/native/directx)
+# that the top-level submodule init does not fetch.
+if [ ! -f research/dxmt/include/native/directx/include/d3d11.h ] && [ ! -f research/dxmt/include/native/directx/d3d11.h ]; then
+    git -C research/dxmt submodule update --init --depth 100 include/native/directx
+fi
+# airconv includes air_{msad,samplepos,tessellation}.h, which DXMT's meson
+# build generates (metal -> .air -> xxd -i). build/dxmt-ios expects them in
+# shader-headers/ but nothing creates them outside the author's tree.
+SH="build/dxmt-ios/shader-headers"
+mkdir -p "$SH"
+if ! xcrun -sdk macosx metal --version >/dev/null 2>&1; then
+    echo "==> [5d-] downloading Metal toolchain"
+    xcodebuild -downloadComponent MetalToolchain
+fi
+for m in research/dxmt/src/airconv/shaders/*.metal; do
+    n=$(basename "$m" .metal)
+    [ -f "$SH/$n.h" ] && continue
+    xcrun -sdk macosx metal -std=metal3.1 --target=air64-apple-macos14.0 -o "$SH/$n.air" -c "$m"
+    python3 - "$SH/$n.air" "$n" "$SH/$n.h" <<'PY'
+import sys
+data = open(sys.argv[1], "rb").read(); name = sys.argv[2]
+rows = [", ".join("0x%02x" % b for b in data[i:i+12]) for i in range(0, len(data), 12)]
+with open(sys.argv[3], "w") as f:
+    f.write("unsigned char %s[] = {\n  %s\n};\nunsigned int %s_len = %d;\n" % (name, ",\n  ".join(rows), name, len(data)))
+PY
+    echo "    generated $SH/$n.h ($(wc -c < "$SH/$n.air" | tr -d ' ') bytes of AIR)"
+done
 run_build build/dxmt-ios
 # Without Apple's Metal Shader Converter package the madeira-d3d12 objects are
 # skipped, but winemetal (unix call 127) and ContentView.swift still reference
